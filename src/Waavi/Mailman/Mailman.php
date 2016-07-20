@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\File;
 use \App;
 use Illuminate\Support\Facades\Event;
 
+use User;
+use Client;
+use PrivateLabelManager;
+use PrivateLabel;
+
 class Mailman {
 
 	/**
@@ -77,6 +82,8 @@ class Mailman {
 	 * @var bool
 	 */
 	protected $pretending = false;
+
+	protected $private_label;
 
 	/**
 	 *	Mailman constructor.
@@ -154,6 +161,31 @@ class Mailman {
 		return $this;
 	}
 
+	public function setPrivateLabel(PrivateLabel $p)
+	{
+		$this->private_label = $p;
+		return $this;
+	}
+
+	public function getPrivateLabel(){
+		if($this->private_label)
+			return $this->private_label;
+
+		foreach($this->message->getSwiftMessage()->getTo() as $email){
+			if($user = Client::findByEmail($email)->first()){
+				// return immidiately, we always prefer clients
+				return $this->private_label = PrivateLabelManager::getLabel($user);
+			}
+
+			// Otherwise just get whoever is there.
+			$this->private_label = PrivateLabelManager::getLabel($user);
+		}
+
+		// By now there should be a label, unless there were no emails in the to field,
+		// which means no on is receiving this message...
+		return $this->private_label;
+	}
+
 	/**
 	 *	Return the mail as html.
 	 *	@return string
@@ -166,7 +198,9 @@ class Mailman {
 		Lang::setLocale($newLocale);
 
 		// Generate HTML:
-		$html 					= View::make($this->view, $this->data)->render();
+		$html 					= View::make($this->view, $this->data)
+									->with('PrivateLabel',$this->getPrivateLabel())
+									->render();
 		$css 						= File::get($this->cssFile);
 		$inliner 				= new CssInline($html, $css);
 		$body 					= $inliner->convert();
